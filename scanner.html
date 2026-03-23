@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Consulta Productos</title>
-  <!-- ZXing: lee códigos desde imagen, funciona sin HTTPS -->
   <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -52,7 +51,7 @@
       align-items: center;
       gap: 10px;
     }
-    .status.show    { display: flex; }
+    .status.show    { display:flex; }
     .status.ok      { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.45); color:#fff; }
     .status.err     { background:rgba(255,50,60,0.3);    border:1px solid rgba(255,80,80,0.6);    color:#ffcccc; }
     .status.info    { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.8); }
@@ -62,7 +61,46 @@
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
     @keyframes spin  { to{transform:rotate(360deg);} }
 
-    /* SCAN BUTTON — abre cámara nativa */
+    /* SCANNER VIEWPORT */
+    #scanner-wrap { width:100%; display:none; }
+    #scanner-wrap.active { display:block; }
+
+    #scanner-video-wrap {
+      width:100%; aspect-ratio:4/3;
+      border-radius:14px; overflow:hidden;
+      position:relative; background:#000;
+      border:3px solid rgba(255,255,255,0.5);
+    }
+    #scanner-video {
+      width:100%; height:100%;
+      object-fit:cover; display:block;
+    }
+
+    /* Esquinas */
+    .corners { position:absolute; inset:0; pointer-events:none; }
+    .corners::before,.corners::after,.c-br,.c-bl {
+      content:''; position:absolute; width:26px; height:26px;
+      border-color:#fff; border-style:solid;
+    }
+    .corners::before { top:12px; left:12px;  border-width:3px 0 0 3px; border-radius:4px 0 0 0; }
+    .corners::after  { top:12px; right:12px; border-width:3px 3px 0 0; border-radius:0 4px 0 0; }
+    .c-br { bottom:12px; right:12px; border-width:0 3px 3px 0; border-radius:0 0 4px 0; }
+    .c-bl { bottom:12px; left:12px;  border-width:0 0 3px 3px; border-radius:0 0 0 4px; }
+
+    .scan-line {
+      position:absolute; left:10px; right:10px; height:2px;
+      background:linear-gradient(90deg,transparent,#fff,transparent);
+      box-shadow:0 0 10px #fff;
+      animation:scanAnim 2s ease-in-out infinite;
+    }
+    @keyframes scanAnim {
+      0%   { top:12%; opacity:0; }
+      10%  { opacity:1; }
+      90%  { opacity:1; }
+      100% { top:88%; opacity:0; }
+    }
+
+    /* SCAN BUTTON */
     .btn-scan {
       width:100%; padding:20px;
       border:none; border-radius:14px;
@@ -75,32 +113,13 @@
       transition:transform .12s, opacity .12s;
       -webkit-user-select:none; user-select:none;
     }
-    .btn-scan:active { transform:scale(0.97); opacity:0.9; }
-    .btn-scan svg { width:22px; height:22px; fill:currentColor; flex-shrink:0; }
-
-    /* Input de cámara oculto */
-    #camera-input { display:none; }
-
-    /* Preview de la imagen capturada */
-    #preview-wrap {
-      width:100%; display:none;
-      flex-direction:column; gap:10px; align-items:center;
-    }
-    #preview-wrap.show { display:flex; }
-    #preview-img {
-      width:100%; border-radius:12px;
-      border:3px solid rgba(255,255,255,0.5);
-      max-height:260px; object-fit:contain;
-      background:#000;
-    }
-    .preview-hint {
-      font-size:12px; color:rgba(255,255,255,0.55);
-      font-weight:700; text-align:center;
-    }
+    .btn-scan:active  { transform:scale(0.97); opacity:0.9; }
+    .btn-scan.stop    { background:#ff3344; color:#fff; }
+    .btn-scan svg     { width:22px; height:22px; fill:currentColor; flex-shrink:0; }
 
     /* DIVIDER */
     .divider { width:100%; display:flex; align-items:center; gap:12px; }
-    .divider hr { flex:1; border:none; border-top:1px solid rgba(255,255,255,0.25); }
+    .divider hr   { flex:1; border:none; border-top:1px solid rgba(255,255,255,0.25); }
     .divider span { font-size:12px; color:rgba(255,255,255,.5); font-weight:700; letter-spacing:2px; }
 
     /* MANUAL INPUT */
@@ -143,27 +162,27 @@
       display:flex; align-items:center;
       justify-content:space-between; gap:8px; flex-shrink:0;
     }
-    .iframe-toolbar .code-label {
-      font-size:12px; font-weight:700; color:rgba(255,255,255,0.7);
+    .code-label {
+      font-size:12px; font-weight:700; color:rgba(255,255,255,0.75);
       letter-spacing:1px; flex:1;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
     }
     .zoom-group { display:flex; align-items:center; gap:4px; }
     .zoom-group button {
       background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
-      border-radius:6px; color:#fff; font-size:16px; font-weight:900;
+      border-radius:6px; color:#fff; font-size:17px; font-weight:900;
       width:32px; height:32px; cursor:pointer;
       display:flex; align-items:center; justify-content:center;
-      transition:background .15s; line-height:1; padding:0;
+      line-height:1; padding:0; transition:background .15s;
     }
     .zoom-group button:active { background:rgba(255,255,255,0.3); }
-    .zoom-pct { font-size:11px; font-weight:700; color:rgba(255,255,255,0.6); min-width:36px; text-align:center; }
+    .zoom-pct { font-size:11px; font-weight:700; color:rgba(255,255,255,0.65); min-width:36px; text-align:center; }
     .btn-close-frame {
       background:rgba(255,50,60,0.3); border:1px solid rgba(255,80,80,0.5);
       border-radius:7px; color:#ffaaaa; font-size:12px; font-weight:700;
-      padding:5px 10px; cursor:pointer; white-space:nowrap;
+      padding:6px 10px; cursor:pointer; white-space:nowrap;
     }
-    .btn-close-frame:active { background:rgba(255,50,60,0.5); }
+    .btn-close-frame:active { background:rgba(255,50,60,0.55); }
 
     .iframe-scaler { width:100%; position:relative; overflow:hidden; background:#fff; }
     #result-iframe { border:none; display:block; }
@@ -183,20 +202,23 @@
     <span id="status-text">Listo para escanear</span>
   </div>
 
-  <!-- Input oculto que abre la cámara nativa -->
-  <input type="file" id="camera-input" accept="image/*" capture="environment" />
+  <!-- Scanner en vivo -->
+  <div id="scanner-wrap">
+    <div id="scanner-video-wrap">
+      <video id="scanner-video" playsinline muted autoplay></video>
+      <div class="corners">
+        <div class="c-br"></div>
+        <div class="c-bl"></div>
+      </div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
 
   <!-- Botón escanear -->
-  <button class="btn-scan" id="btn-scan" onclick="document.getElementById('camera-input').click()">
+  <button class="btn-scan" id="btn-scan" onclick="toggleScanner()">
     <svg viewBox="0 0 24 24"><path d="M2 6a2 2 0 0 1 2-2h2V2H4a4 4 0 0 0-4 4v2h2V6zm18-2h-2v2h2v14H4V6h2V4H4a4 4 0 0 0-4 4v12a4 4 0 0 0 4 4h16a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4zM8 2v2h8V2H8zm4 10H8v4h4v-4zm4-4H8v2h8V8zm0 4h-2v4h2v-4z"/></svg>
     ESCANEAR
   </button>
-
-  <!-- Preview de imagen capturada -->
-  <div id="preview-wrap">
-    <img id="preview-img" alt="Foto capturada" />
-    <div class="preview-hint">Procesando código de barras…</div>
-  </div>
 
   <div class="divider"><hr/><span>O</span><hr/></div>
 
@@ -207,7 +229,7 @@
     <button onclick="submitCode(document.getElementById('manual-input').value.trim())">IR</button>
   </div>
 
-  <!-- Iframe result -->
+  <!-- Resultado iframe -->
   <div id="result-wrap">
     <div class="iframe-toolbar">
       <span class="code-label" id="code-label">COD: —</span>
@@ -226,61 +248,91 @@
 </div>
 
 <script>
-// ── ZXing setup ──────────────────────────────────────────────
-// BrowserMultiFormatReader soporta todos los formatos incluyendo alfanuméricos
-// (Code128, Code39, Code93, QR, EAN, UPC, ITF, Codabar, DataMatrix, PDF417, Aztec)
+// ── ZXing: soporta Code128, Code39, Code93, EAN, UPC, QR, DataMatrix, PDF417, Aztec, ITF ──
 const hints = new Map();
 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-const barcodeReader = new ZXing.BrowserMultiFormatReader(hints);
+const codeReader = new ZXing.BrowserMultiFormatReader(hints, 500);
 
-// ── DOM refs ─────────────────────────────────────────────────
-const statusEl    = document.getElementById('status');
-const resultWrap  = document.getElementById('result-wrap');
-const scaler      = document.getElementById('iframe-scaler');
-const iframe      = document.getElementById('result-iframe');
-const zoomPctEl   = document.getElementById('zoom-pct');
-const manualInput = document.getElementById('manual-input');
-const cameraInput = document.getElementById('camera-input');
-const previewWrap = document.getElementById('preview-wrap');
-const previewImg  = document.getElementById('preview-img');
-
+let scanning    = false;
 let zoomScale   = 0.50;
 let expectedUrl = '';
 let loadCount   = 0;
 
-// ── Cámara: captura imagen y decodifica ──────────────────────
-cameraInput.addEventListener('change', async () => {
-  const file = cameraInput.files[0];
-  if (!file) return;
+const statusEl   = document.getElementById('status');
+const scannerWrap= document.getElementById('scanner-wrap');
+const btnScan    = document.getElementById('btn-scan');
+const resultWrap = document.getElementById('result-wrap');
+const scaler     = document.getElementById('iframe-scaler');
+const iframe     = document.getElementById('result-iframe');
+const zoomPctEl  = document.getElementById('zoom-pct');
+const manualInput= document.getElementById('manual-input');
+const video      = document.getElementById('scanner-video');
 
-  // Mostrar preview
-  const objectUrl = URL.createObjectURL(file);
-  previewImg.src  = objectUrl;
-  previewWrap.classList.add('show');
-  setStatus('Procesando imagen…', 'loading');
+// ── Scanner en tiempo real ───────────────────────────────────
+function toggleScanner() {
+  scanning ? stopScanner() : startScanner();
+}
+
+async function startScanner() {
+  scannerWrap.classList.add('active');
+  btnScan.classList.add('stop');
+  setBtnText('DETENER');
+  setStatus('Iniciando cámara…', 'loading');
 
   try {
-    const result = await barcodeReader.decodeFromImageUrl(objectUrl);
-    const code = result.getText();
-    setStatus('¡Código detectado! ' + code, 'ok');
-    navigator.vibrate && navigator.vibrate([80, 40, 80]);
-    previewWrap.classList.remove('show');
-    submitCode(code);
+    // Obtener lista de cámaras y elegir la trasera
+    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+    const backCam = devices.find(d =>
+      /back|rear|environment|trasera/i.test(d.label)
+    ) || devices[devices.length - 1]; // última suele ser la trasera
+
+    const deviceId = backCam ? backCam.deviceId : undefined;
+
+    await codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
+      if (result) {
+        const code = result.getText();
+        stopScanner();
+        navigator.vibrate && navigator.vibrate([80, 40, 80]);
+        setStatus('¡Código detectado! ' + code, 'ok');
+        submitCode(code);
+      }
+      // err es normal cuando no hay código en el frame, no lo mostramos
+    });
+
+    scanning = true;
+    setStatus('Apunta al código de barras…', 'info');
+
   } catch(e) {
-    setStatus('No se detectó código. Intenta con mejor enfoque o más luz.', 'err');
+    stopScanner();
+    if (/permission|denied/i.test(e.message || '')) {
+      setStatus('Permiso de cámara denegado. Actívalo en el navegador.', 'err');
+    } else if (/https|secure/i.test(e.message || '') || location.protocol === 'http:') {
+      setStatus('La cámara requiere HTTPS. Usa el túnel Cloudflare o ingresa el código manual.', 'err');
+    } else {
+      setStatus('Error de cámara: ' + (e.message || e), 'err');
+    }
   }
+}
 
-  // Limpiar input para permitir re-escanear el mismo archivo
-  cameraInput.value = '';
-});
+function stopScanner() {
+  codeReader.reset();
+  scanning = false;
+  scannerWrap.classList.remove('active');
+  btnScan.classList.remove('stop');
+  setBtnText('ESCANEAR');
+}
 
+function setBtnText(txt) {
+  Array.from(btnScan.childNodes).forEach(n => {
+    if (n.nodeType === 3) n.textContent = ' ' + txt;
+  });
+}
 
-// ── Zoom ────────────────────────────────────────────────────
+// ── Zoom iframe ──────────────────────────────────────────────
 function applyZoom() {
   const visibleH = Math.round(window.innerHeight * 0.62);
   const iframeW  = Math.round(scaler.clientWidth / zoomScale);
   const iframeH  = Math.round(visibleH / zoomScale);
-
   iframe.style.width           = iframeW + 'px';
   iframe.style.height          = iframeH + 'px';
   iframe.style.transformOrigin = 'top left';
@@ -298,7 +350,7 @@ window.addEventListener('resize', () => {
   if (resultWrap.classList.contains('show')) applyZoom();
 });
 
-// ── Cargar resultado en iframe ───────────────────────────────
+// ── Resultado en iframe ──────────────────────────────────────
 function submitCode(code) {
   if (!code) { setStatus('Ingresa un código válido.', 'err'); return; }
 
@@ -318,7 +370,7 @@ function submitCode(code) {
   };
 }
 
-// Detectar navegación dentro del iframe → cerrar
+// Cerrar iframe si navega a otra URL
 iframe.addEventListener('load', () => {
   if (loadCount === 0) return;
   let changed = false;
@@ -326,7 +378,7 @@ iframe.addEventListener('load', () => {
     const current = iframe.contentWindow.location.href;
     changed = (current !== expectedUrl && current !== 'about:blank');
   } catch(e) {
-    changed = true; // cross-origin → cerrar
+    changed = true;
   }
   if (changed && resultWrap.classList.contains('show')) closeResult();
 });
@@ -342,8 +394,7 @@ function closeResult() {
 // ── Status ───────────────────────────────────────────────────
 function setStatus(msg, type = 'info') {
   statusEl.className = 'status show ' + type;
-  const loading = type === 'loading';
-  statusEl.innerHTML = loading
+  statusEl.innerHTML = type === 'loading'
     ? `<div class="spinner"></div><span>${msg}</span>`
     : `<div class="dot"></div><span>${msg}</span>`;
 }
@@ -354,3 +405,4 @@ manualInput.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
+
