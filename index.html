@@ -4,8 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Consulta Productos</title>
-  <!-- ZXing versión estable con API correcta -->
-  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 
@@ -66,16 +65,15 @@
     #scanner-wrap { width:100%; display:none; }
     #scanner-wrap.active { display:block; }
 
-    #scanner-video-wrap {
+    #interactive {
       width:100%; aspect-ratio:4/3;
       border-radius:14px; overflow:hidden;
       position:relative; background:#000;
       border:3px solid rgba(255,255,255,0.5);
     }
-    #scanner-video {
-      width:100%; height:100%;
-      object-fit:cover; display:block;
-    }
+    #interactive video  { width:100%; height:100%; object-fit:cover; display:block; }
+    #interactive canvas { display:none; }
+
     .corners { position:absolute; inset:0; pointer-events:none; }
     .corners::before,.corners::after,.c-br,.c-bl {
       content:''; position:absolute; width:26px; height:26px;
@@ -181,6 +179,7 @@
     }
     .btn-close-frame:active { background:rgba(255,50,60,0.55); }
 
+    /* iframe escalado cross-origin safe */
     .iframe-scaler { width:100%; position:relative; overflow:hidden; background:#fff; }
     #result-iframe { border:none; display:block; }
   </style>
@@ -201,8 +200,7 @@
 
   <!-- Scanner en vivo -->
   <div id="scanner-wrap">
-    <div id="scanner-video-wrap">
-      <video id="scanner-video" playsinline muted autoplay></video>
+    <div id="interactive">
       <div class="corners">
         <div class="c-br"></div>
         <div class="c-bl"></div>
@@ -238,21 +236,16 @@
       <button class="btn-close-frame" onclick="closeResult()">✕ Cerrar</button>
     </div>
     <div class="iframe-scaler" id="iframe-scaler">
-      <iframe id="result-iframe" scrolling="yes"></iframe>
+      <iframe id="result-iframe" scrolling="yes"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
     </div>
   </div>
 
 </div>
 
 <script>
-// ── ZXing 0.18.6 — API estable ────────────────────────────────
-// BrowserMultiFormatReader soporta: Code128, Code39, Code93,
-// EAN-13/8, UPC-A/E, QR, DataMatrix, PDF417, Aztec, ITF, Codabar
-const hints = new Map();
-hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-const codeReader = new ZXing.BrowserMultiFormatReader(hints, 500);
-
 let scanning    = false;
+let lastCode    = null;
 let zoomScale   = 0.50;
 let expectedUrl = '';
 let loadCount   = 0;
@@ -267,65 +260,85 @@ const scaler      = document.getElementById('iframe-scaler');
 const iframe      = document.getElementById('result-iframe');
 const zoomPctEl   = document.getElementById('zoom-pct');
 const manualInput = document.getElementById('manual-input');
-const video       = document.getElementById('scanner-video');
 
-// ── Scanner en tiempo real ────────────────────────────────────
+// ── Scanner Quagga ────────────────────────────────────────────
 function toggleScanner() {
   scanning ? stopScanner() : startScanner();
 }
 
-async function startScanner() {
+function startScanner() {
+  lastCode = null;
   scannerWrap.classList.add('active');
   btnScan.classList.add('stop');
   btnIcon.textContent = '⏹';
   btnText.textContent = 'DETENER';
   setStatus('Iniciando cámara…', 'loading');
 
-  try {
-    // API correcta para ZXing 0.18.x
-    const devices = await codeReader.listVideoInputDevices();
-
-    // Elegir cámara trasera
-    let deviceId = undefined;
-    if (devices && devices.length > 0) {
-      const back = devices.find(d => /back|rear|environment|trasera/i.test(d.label));
-      deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
-    }
-
-    await codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
-      if (result) {
-        const code = result.getText();
-        stopScanner();
-        navigator.vibrate && navigator.vibrate([80, 40, 80]);
-        setStatus('¡Código detectado: ' + code, 'ok');
-        submitCode(code);
+  Quagga.init({
+    inputStream: {
+      name: 'Live',
+      type: 'LiveStream',
+      target: document.getElementById('interactive'),
+      constraints: {
+        facingMode: 'environment',
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
       }
-      // err en frames sin código es normal, ignorar
-    });
-
+    },
+    decoder: {
+      readers: [
+        'code_128_reader',
+        'ean_reader',
+        'ean_8_reader',
+        'code_39_reader',
+        'code_39_vin_reader',
+        'codabar_reader',
+        'upc_reader',
+        'upc_e_reader',
+        'i2of5_reader',
+        '2of5_reader',
+        'code_93_reader'
+      ]
+    },
+    locate: true,
+    numOfWorkers: 2,
+    frequency: 10
+  }, function(err) {
+    if (err) {
+      stopScanner();
+      if (/permission|denied/i.test(err.name || err.message || '')) {
+        setStatus('Permiso de cámara denegado. Actívalo en el navegador.', 'err');
+      } else {
+        setStatus('Error de cámara: ' + (err.message || err.name || err), 'err');
+      }
+      return;
+    }
+    Quagga.start();
     scanning = true;
     setStatus('Apunta al código de barras…', 'info');
+  });
 
-  } catch(e) {
-    stopScanner();
-    const msg = e.message || String(e);
-    if (/permission|denied|notallowed/i.test(msg)) {
-      setStatus('Permiso de cámara denegado. Toca el ícono de cámara en la barra del navegador y permite el acceso.', 'err');
-    } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-      setStatus('La cámara solo funciona en HTTPS. Usa el código manual o activa el túnel Cloudflare.', 'err');
-    } else {
-      setStatus('Error de cámara: ' + msg, 'err');
-    }
-  }
+  Quagga.onDetected(onDetected);
 }
 
 function stopScanner() {
-  try { codeReader.reset(); } catch(e) {}
+  Quagga.offDetected(onDetected);
+  try { Quagga.stop(); } catch(e) {}
   scanning = false;
   scannerWrap.classList.remove('active');
   btnScan.classList.remove('stop');
   btnIcon.textContent = '📷';
   btnText.textContent = 'ESCANEAR';
+}
+
+function onDetected(result) {
+  const code = result.codeResult.code;
+  if (!code || code === lastCode) return;
+  lastCode = code;
+  navigator.vibrate && navigator.vibrate([80, 40, 80]);
+  setStatus('¡Código detectado: ' + code, 'ok');
+  stopScanner();
+  submitCode(code);
 }
 
 // ── Zoom iframe ───────────────────────────────────────────────
@@ -366,11 +379,11 @@ function submitCode(code) {
     loadCount++;
     applyZoom();
     setStatus('Código ' + code + ' cargado.', 'ok');
-    resultWrap.scrollIntoView({ behavior:'smooth', block:'start' });
+    resultWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 }
 
-// Cerrar si el iframe navega a otra URL
+// Cerrar si navega a otra URL dentro del iframe
 iframe.addEventListener('load', () => {
   if (loadCount === 0) return;
   let changed = false;
@@ -378,7 +391,7 @@ iframe.addEventListener('load', () => {
     const current = iframe.contentWindow.location.href;
     changed = (current !== expectedUrl && current !== 'about:blank');
   } catch(e) {
-    changed = true; // cross-origin → cerrar
+    changed = true;
   }
   if (changed && resultWrap.classList.contains('show')) closeResult();
 });
