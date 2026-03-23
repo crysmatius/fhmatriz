@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Consulta Productos</title>
-  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <!-- ZXing versión estable con API correcta -->
+  <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 
@@ -19,7 +20,6 @@
 
     .page-header {
       width: 100%;
-      background: #0000cc;
       padding: 20px 16px 16px;
       text-align: center;
     }
@@ -50,14 +50,15 @@
       display: none;
       align-items: center;
       gap: 10px;
+      line-height: 1.4;
     }
     .status.show    { display:flex; }
     .status.ok      { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.45); color:#fff; }
     .status.err     { background:rgba(255,50,60,0.3);    border:1px solid rgba(255,80,80,0.6);    color:#ffcccc; }
-    .status.info    { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.8); }
+    .status.info    { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.85); }
     .status.loading { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.3);  color:#fff; }
-    .dot     { width:8px; height:8px; border-radius:50%; background:currentColor; flex-shrink:0; animation:blink 1s ease-in-out infinite; }
-    .spinner { width:15px; height:15px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; flex-shrink:0; animation:spin .7s linear infinite; }
+    .dot     { width:8px; height:8px; min-width:8px; border-radius:50%; background:currentColor; animation:blink 1s ease-in-out infinite; }
+    .spinner { width:15px; height:15px; min-width:15px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
     @keyframes spin  { to{transform:rotate(360deg);} }
 
@@ -75,8 +76,6 @@
       width:100%; height:100%;
       object-fit:cover; display:block;
     }
-
-    /* Esquinas */
     .corners { position:absolute; inset:0; pointer-events:none; }
     .corners::before,.corners::after,.c-br,.c-bl {
       content:''; position:absolute; width:26px; height:26px;
@@ -86,7 +85,6 @@
     .corners::after  { top:12px; right:12px; border-width:3px 3px 0 0; border-radius:0 4px 0 0; }
     .c-br { bottom:12px; right:12px; border-width:0 3px 3px 0; border-radius:0 0 4px 0; }
     .c-bl { bottom:12px; left:12px;  border-width:0 0 3px 3px; border-radius:0 0 0 4px; }
-
     .scan-line {
       position:absolute; left:10px; right:10px; height:2px;
       background:linear-gradient(90deg,transparent,#fff,transparent);
@@ -113,9 +111,8 @@
       transition:transform .12s, opacity .12s;
       -webkit-user-select:none; user-select:none;
     }
-    .btn-scan:active  { transform:scale(0.97); opacity:0.9; }
-    .btn-scan.stop    { background:#ff3344; color:#fff; }
-    .btn-scan svg     { width:22px; height:22px; fill:currentColor; flex-shrink:0; }
+    .btn-scan:active { transform:scale(0.97); opacity:0.9; }
+    .btn-scan.stop   { background:#ff3344; color:#fff; }
 
     /* DIVIDER */
     .divider { width:100%; display:flex; align-items:center; gap:12px; }
@@ -141,7 +138,7 @@
     .manual-row button {
       background:#fff; border:none; border-radius:10px;
       padding:14px 20px; color:#0000cc;
-      font-size:14px; font-weight:900; cursor:pointer; letter-spacing:1px;
+      font-size:14px; font-weight:900; cursor:pointer;
       transition:transform .12s;
     }
     .manual-row button:active { transform:scale(0.96); }
@@ -216,8 +213,8 @@
 
   <!-- Botón escanear -->
   <button class="btn-scan" id="btn-scan" onclick="toggleScanner()">
-    <svg viewBox="0 0 24 24"><path d="M2 6a2 2 0 0 1 2-2h2V2H4a4 4 0 0 0-4 4v2h2V6zm18-2h-2v2h2v14H4V6h2V4H4a4 4 0 0 0-4 4v12a4 4 0 0 0 4 4h16a4 4 0 0 0 4-4V8a4 4 0 0 0-4-4zM8 2v2h8V2H8zm4 10H8v4h4v-4zm4-4H8v2h8V8zm0 4h-2v4h2v-4z"/></svg>
-    ESCANEAR
+    <span id="btn-icon">📷</span>
+    <span id="btn-text">ESCANEAR</span>
   </button>
 
   <div class="divider"><hr/><span>O</span><hr/></div>
@@ -248,7 +245,9 @@
 </div>
 
 <script>
-// ── ZXing: soporta Code128, Code39, Code93, EAN, UPC, QR, DataMatrix, PDF417, Aztec, ITF ──
+// ── ZXing 0.18.6 — API estable ────────────────────────────────
+// BrowserMultiFormatReader soporta: Code128, Code39, Code93,
+// EAN-13/8, UPC-A/E, QR, DataMatrix, PDF417, Aztec, ITF, Codabar
 const hints = new Map();
 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 const codeReader = new ZXing.BrowserMultiFormatReader(hints, 500);
@@ -258,17 +257,19 @@ let zoomScale   = 0.50;
 let expectedUrl = '';
 let loadCount   = 0;
 
-const statusEl   = document.getElementById('status');
-const scannerWrap= document.getElementById('scanner-wrap');
-const btnScan    = document.getElementById('btn-scan');
-const resultWrap = document.getElementById('result-wrap');
-const scaler     = document.getElementById('iframe-scaler');
-const iframe     = document.getElementById('result-iframe');
-const zoomPctEl  = document.getElementById('zoom-pct');
-const manualInput= document.getElementById('manual-input');
-const video      = document.getElementById('scanner-video');
+const statusEl    = document.getElementById('status');
+const scannerWrap = document.getElementById('scanner-wrap');
+const btnScan     = document.getElementById('btn-scan');
+const btnIcon     = document.getElementById('btn-icon');
+const btnText     = document.getElementById('btn-text');
+const resultWrap  = document.getElementById('result-wrap');
+const scaler      = document.getElementById('iframe-scaler');
+const iframe      = document.getElementById('result-iframe');
+const zoomPctEl   = document.getElementById('zoom-pct');
+const manualInput = document.getElementById('manual-input');
+const video       = document.getElementById('scanner-video');
 
-// ── Scanner en tiempo real ───────────────────────────────────
+// ── Scanner en tiempo real ────────────────────────────────────
 function toggleScanner() {
   scanning ? stopScanner() : startScanner();
 }
@@ -276,27 +277,30 @@ function toggleScanner() {
 async function startScanner() {
   scannerWrap.classList.add('active');
   btnScan.classList.add('stop');
-  setBtnText('DETENER');
+  btnIcon.textContent = '⏹';
+  btnText.textContent = 'DETENER';
   setStatus('Iniciando cámara…', 'loading');
 
   try {
-    // Obtener lista de cámaras y elegir la trasera
-    const devices = await ZXing.BrowserCodeReader.listVideoInputDevices();
-    const backCam = devices.find(d =>
-      /back|rear|environment|trasera/i.test(d.label)
-    ) || devices[devices.length - 1]; // última suele ser la trasera
+    // API correcta para ZXing 0.18.x
+    const devices = await codeReader.listVideoInputDevices();
 
-    const deviceId = backCam ? backCam.deviceId : undefined;
+    // Elegir cámara trasera
+    let deviceId = undefined;
+    if (devices && devices.length > 0) {
+      const back = devices.find(d => /back|rear|environment|trasera/i.test(d.label));
+      deviceId = back ? back.deviceId : devices[devices.length - 1].deviceId;
+    }
 
-    await codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
+    await codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', (result, err) => {
       if (result) {
         const code = result.getText();
         stopScanner();
         navigator.vibrate && navigator.vibrate([80, 40, 80]);
-        setStatus('¡Código detectado! ' + code, 'ok');
+        setStatus('¡Código detectado: ' + code, 'ok');
         submitCode(code);
       }
-      // err es normal cuando no hay código en el frame, no lo mostramos
+      // err en frames sin código es normal, ignorar
     });
 
     scanning = true;
@@ -304,31 +308,27 @@ async function startScanner() {
 
   } catch(e) {
     stopScanner();
-    if (/permission|denied/i.test(e.message || '')) {
-      setStatus('Permiso de cámara denegado. Actívalo en el navegador.', 'err');
-    } else if (/https|secure/i.test(e.message || '') || location.protocol === 'http:') {
-      setStatus('La cámara requiere HTTPS. Usa el túnel Cloudflare o ingresa el código manual.', 'err');
+    const msg = e.message || String(e);
+    if (/permission|denied|notallowed/i.test(msg)) {
+      setStatus('Permiso de cámara denegado. Toca el ícono de cámara en la barra del navegador y permite el acceso.', 'err');
+    } else if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      setStatus('La cámara solo funciona en HTTPS. Usa el código manual o activa el túnel Cloudflare.', 'err');
     } else {
-      setStatus('Error de cámara: ' + (e.message || e), 'err');
+      setStatus('Error de cámara: ' + msg, 'err');
     }
   }
 }
 
 function stopScanner() {
-  codeReader.reset();
+  try { codeReader.reset(); } catch(e) {}
   scanning = false;
   scannerWrap.classList.remove('active');
   btnScan.classList.remove('stop');
-  setBtnText('ESCANEAR');
+  btnIcon.textContent = '📷';
+  btnText.textContent = 'ESCANEAR';
 }
 
-function setBtnText(txt) {
-  Array.from(btnScan.childNodes).forEach(n => {
-    if (n.nodeType === 3) n.textContent = ' ' + txt;
-  });
-}
-
-// ── Zoom iframe ──────────────────────────────────────────────
+// ── Zoom iframe ───────────────────────────────────────────────
 function applyZoom() {
   const visibleH = Math.round(window.innerHeight * 0.62);
   const iframeW  = Math.round(scaler.clientWidth / zoomScale);
@@ -350,7 +350,7 @@ window.addEventListener('resize', () => {
   if (resultWrap.classList.contains('show')) applyZoom();
 });
 
-// ── Resultado en iframe ──────────────────────────────────────
+// ── Resultado en iframe ───────────────────────────────────────
 function submitCode(code) {
   if (!code) { setStatus('Ingresa un código válido.', 'err'); return; }
 
@@ -370,7 +370,7 @@ function submitCode(code) {
   };
 }
 
-// Cerrar iframe si navega a otra URL
+// Cerrar si el iframe navega a otra URL
 iframe.addEventListener('load', () => {
   if (loadCount === 0) return;
   let changed = false;
@@ -378,7 +378,7 @@ iframe.addEventListener('load', () => {
     const current = iframe.contentWindow.location.href;
     changed = (current !== expectedUrl && current !== 'about:blank');
   } catch(e) {
-    changed = true;
+    changed = true; // cross-origin → cerrar
   }
   if (changed && resultWrap.classList.contains('show')) closeResult();
 });
@@ -391,7 +391,7 @@ function closeResult() {
   manualInput.value = '';
 }
 
-// ── Status ───────────────────────────────────────────────────
+// ── Status ────────────────────────────────────────────────────
 function setStatus(msg, type = 'info') {
   statusEl.className = 'status show ' + type;
   statusEl.innerHTML = type === 'loading'
@@ -405,4 +405,3 @@ manualInput.addEventListener('keydown', e => {
 </script>
 </body>
 </html>
-
