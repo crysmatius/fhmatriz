@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Consulta Productos</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+    body {
+      background: #0000cc;
+      font-family: Arial, Helvetica, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .page-header {
+      width: 100%;
+      padding: 20px 16px 16px;
+      text-align: center;
+    }
+    .page-header h1 {
+      color: #fff;
+      font-size: clamp(22px, 7vw, 34px);
+      font-weight: 900;
+      text-shadow: 2px 2px 6px rgba(0,0,0,0.45);
+    }
+
+    .content {
+      width: 100%;
+      max-width: 500px;
+      padding: 16px 14px 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    /* STATUS */
+    .status {
+      width: 100%;
+      padding: 11px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      line-height: 1.4;
+    }
+    .status.show    { display:flex; }
+    .status.ok      { background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.45); color:#fff; }
+    .status.err     { background:rgba(255,50,60,0.3);    border:1px solid rgba(255,80,80,0.6);    color:#ffcccc; }
+    .status.info    { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.85); }
+    .status.loading { background:rgba(255,255,255,0.1);  border:1px solid rgba(255,255,255,0.3);  color:#fff; }
+    .dot     { width:8px; height:8px; min-width:8px; border-radius:50%; background:currentColor; animation:blink 1s ease-in-out infinite; }
+    .spinner { width:15px; height:15px; min-width:15px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+    @keyframes spin  { to{transform:rotate(360deg);} }
+
+    /* SCANNER VIEWPORT */
+    #scanner-wrap { width:100%; display:none; }
+    #scanner-wrap.active { display:block; }
+
+    #interactive {
+      width:100%; aspect-ratio:4/3;
+      border-radius:14px; overflow:hidden;
+      position:relative; background:#000;
+      border:3px solid rgba(255,255,255,0.5);
+    }
+    #interactive video  { width:100%; height:100%; object-fit:cover; display:block; }
+    #interactive canvas { display:none; }
+
+    .corners { position:absolute; inset:0; pointer-events:none; }
+    .corners::before,.corners::after,.c-br,.c-bl {
+      content:''; position:absolute; width:26px; height:26px;
+      border-color:#fff; border-style:solid;
+    }
+    .corners::before { top:12px; left:12px;  border-width:3px 0 0 3px; border-radius:4px 0 0 0; }
+    .corners::after  { top:12px; right:12px; border-width:3px 3px 0 0; border-radius:0 4px 0 0; }
+    .c-br { bottom:12px; right:12px; border-width:0 3px 3px 0; border-radius:0 0 4px 0; }
+    .c-bl { bottom:12px; left:12px;  border-width:0 0 3px 3px; border-radius:0 0 0 4px; }
+    .scan-line {
+      position:absolute; left:10px; right:10px; height:2px;
+      background:linear-gradient(90deg,transparent,#fff,transparent);
+      box-shadow:0 0 10px #fff;
+      animation:scanAnim 2s ease-in-out infinite;
+    }
+    @keyframes scanAnim {
+      0%   { top:12%; opacity:0; }
+      10%  { opacity:1; }
+      90%  { opacity:1; }
+      100% { top:88%; opacity:0; }
+    }
+
+    /* SCAN BUTTON */
+    .btn-scan {
+      width:100%; padding:20px;
+      border:none; border-radius:14px;
+      background:#fff; color:#0000cc;
+      font-size:clamp(17px,5.5vw,22px);
+      font-weight:900; letter-spacing:2px;
+      text-transform:uppercase; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; gap:12px;
+      box-shadow:0 4px 20px rgba(0,0,0,0.3);
+      transition:transform .12s, opacity .12s;
+      -webkit-user-select:none; user-select:none;
+    }
+    .btn-scan:active { transform:scale(0.97); opacity:0.9; }
+    .btn-scan.stop   { background:#ff3344; color:#fff; }
+
+    /* DIVIDER */
+    .divider { width:100%; display:flex; align-items:center; gap:12px; }
+    .divider hr   { flex:1; border:none; border-top:1px solid rgba(255,255,255,0.25); }
+    .divider span { font-size:12px; color:rgba(255,255,255,.5); font-weight:700; letter-spacing:2px; }
+
+    /* MANUAL INPUT */
+    .manual-label {
+      font-size:11px; font-weight:700; letter-spacing:3px;
+      color:rgba(255,255,255,.55); text-transform:uppercase;
+      display:block; margin-bottom:8px; width:100%;
+    }
+    .manual-row { display:flex; gap:8px; width:100%; }
+    .manual-row input {
+      flex:1; background:rgba(255,255,255,.12);
+      border:1px solid rgba(255,255,255,.35); border-radius:10px;
+      padding:14px 16px; color:#fff;
+      font-size:17px; font-weight:700; outline:none;
+      transition:border-color .2s, background .2s;
+    }
+    .manual-row input::placeholder { color:rgba(255,255,255,.35); font-weight:400; }
+    .manual-row input:focus { border-color:#fff; background:rgba(255,255,255,.18); }
+    .manual-row button {
+      background:#fff; border:none; border-radius:10px;
+      padding:14px 20px; color:#0000cc;
+      font-size:14px; font-weight:900; cursor:pointer;
+      transition:transform .12s;
+    }
+    .manual-row button:active { transform:scale(0.96); }
+
+    /* IFRAME RESULT */
+    #result-wrap {
+      width:100%; display:none;
+      flex-direction:column;
+      border-radius:14px; overflow:hidden;
+      border:3px solid rgba(255,255,255,0.5);
+      box-shadow:0 6px 28px rgba(0,0,0,0.4);
+    }
+    #result-wrap.show { display:flex; }
+
+    .iframe-toolbar {
+      background:#000099;
+      padding:8px 12px;
+      display:flex; align-items:center;
+      justify-content:space-between; gap:8px; flex-shrink:0;
+    }
+    .code-label {
+      font-size:12px; font-weight:700; color:rgba(255,255,255,0.75);
+      letter-spacing:1px; flex:1;
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .zoom-group { display:flex; align-items:center; gap:4px; }
+    .zoom-group button {
+      background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+      border-radius:6px; color:#fff; font-size:17px; font-weight:900;
+      width:32px; height:32px; cursor:pointer;
+      display:flex; align-items:center; justify-content:center;
+      line-height:1; padding:0; transition:background .15s;
+    }
+    .zoom-group button:active { background:rgba(255,255,255,0.3); }
+    .zoom-pct { font-size:11px; font-weight:700; color:rgba(255,255,255,0.65); min-width:36px; text-align:center; }
+    .btn-close-frame {
+      background:rgba(255,50,60,0.3); border:1px solid rgba(255,80,80,0.5);
+      border-radius:7px; color:#ffaaaa; font-size:12px; font-weight:700;
+      padding:6px 10px; cursor:pointer; white-space:nowrap;
+    }
+    .btn-close-frame:active { background:rgba(255,50,60,0.55); }
+
+    /* iframe escalado cross-origin safe */
+    .iframe-scaler { width:100%; position:relative; overflow:hidden; background:#fff; }
+    #result-iframe { border:none; display:block; }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Consulta productos</h1>
+</div>
+
+<div class="content">
+
+  <!-- Status -->
+  <div class="status info show" id="status">
+    <div class="dot"></div>
+    <span id="status-text">Listo para escanear</span>
+  </div>
+
+  <!-- Scanner en vivo -->
+  <div id="scanner-wrap">
+    <div id="interactive">
+      <div class="corners">
+        <div class="c-br"></div>
+        <div class="c-bl"></div>
+      </div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
+
+  <!-- Botón escanear -->
+  <button class="btn-scan" id="btn-scan" onclick="toggleScanner()">
+    <span id="btn-icon">📷</span>
+    <span id="btn-text">ESCANEAR</span>
+  </button>
+
+  <div class="divider"><hr/><span>O</span><hr/></div>
+
+  <!-- Manual -->
+  <label class="manual-label">Código manual</label>
+  <div class="manual-row">
+    <input type="text" id="manual-input" placeholder="Ingresa código..." />
+    <button onclick="submitCode(document.getElementById('manual-input').value.trim())">IR</button>
+  </div>
+
+  <!-- Resultado iframe -->
+  <div id="result-wrap">
+    <div class="iframe-toolbar">
+      <span class="code-label" id="code-label">COD: —</span>
+      <div class="zoom-group">
+        <button onclick="changeZoom(-5)">−</button>
+        <span class="zoom-pct" id="zoom-pct">50%</span>
+        <button onclick="changeZoom(+5)">+</button>
+      </div>
+      <button class="btn-close-frame" onclick="closeResult()">✕ Cerrar</button>
+    </div>
+    <div class="iframe-scaler" id="iframe-scaler">
+      <iframe id="result-iframe" scrolling="yes"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let scanning    = false;
+let lastCode    = null;
+let zoomScale   = 0.50;
+let expectedUrl = '';
+let loadCount   = 0;
+
+const statusEl    = document.getElementById('status');
+const scannerWrap = document.getElementById('scanner-wrap');
+const btnScan     = document.getElementById('btn-scan');
+const btnIcon     = document.getElementById('btn-icon');
+const btnText     = document.getElementById('btn-text');
+const resultWrap  = document.getElementById('result-wrap');
+const scaler      = document.getElementById('iframe-scaler');
+const iframe      = document.getElementById('result-iframe');
+const zoomPctEl   = document.getElementById('zoom-pct');
+const manualInput = document.getElementById('manual-input');
+
+// ── Scanner Quagga ────────────────────────────────────────────
+function toggleScanner() {
+  scanning ? stopScanner() : startScanner();
+}
+
+function startScanner() {
+  lastCode = null;
+  scannerWrap.classList.add('active');
+  btnScan.classList.add('stop');
+  btnIcon.textContent = '⏹';
+  btnText.textContent = 'DETENER';
+  setStatus('Iniciando cámara…', 'loading');
+
+  Quagga.init({
+    inputStream: {
+      name: 'Live',
+      type: 'LiveStream',
+      target: document.getElementById('interactive'),
+      constraints: {
+        facingMode: 'environment',
+        width:  { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    },
+    decoder: {
+      readers: [
+        'code_128_reader',
+        'ean_reader',
+        'ean_8_reader',
+        'code_39_reader',
+        'code_39_vin_reader',
+        'codabar_reader',
+        'upc_reader',
+        'upc_e_reader',
+        'i2of5_reader',
+        '2of5_reader',
+        'code_93_reader'
+      ]
+    },
+    locate: true,
+    numOfWorkers: 2,
+    frequency: 10
+  }, function(err) {
+    if (err) {
+      stopScanner();
+      if (/permission|denied/i.test(err.name || err.message || '')) {
+        setStatus('Permiso de cámara denegado. Actívalo en el navegador.', 'err');
+      } else {
+        setStatus('Error de cámara: ' + (err.message || err.name || err), 'err');
+      }
+      return;
+    }
+    Quagga.start();
+    scanning = true;
+    setStatus('Apunta al código de barras…', 'info');
+  });
+
+  Quagga.onDetected(onDetected);
+}
+
+function stopScanner() {
+  Quagga.offDetected(onDetected);
+  try { Quagga.stop(); } catch(e) {}
+  scanning = false;
+  scannerWrap.classList.remove('active');
+  btnScan.classList.remove('stop');
+  btnIcon.textContent = '📷';
+  btnText.textContent = 'ESCANEAR';
+}
+
+function onDetected(result) {
+  const code = result.codeResult.code;
+  if (!code || code === lastCode) return;
+  lastCode = code;
+  navigator.vibrate && navigator.vibrate([80, 40, 80]);
+  setStatus('¡Código detectado: ' + code, 'ok');
+  stopScanner();
+  submitCode(code);
+}
+
+// ── Zoom iframe ───────────────────────────────────────────────
+function applyZoom() {
+  const visibleH = Math.round(window.innerHeight * 0.62);
+  const iframeW  = Math.round(scaler.clientWidth / zoomScale);
+  const iframeH  = Math.round(visibleH / zoomScale);
+  iframe.style.width           = iframeW + 'px';
+  iframe.style.height          = iframeH + 'px';
+  iframe.style.transformOrigin = 'top left';
+  iframe.style.transform       = `scale(${zoomScale})`;
+  scaler.style.height          = visibleH + 'px';
+  zoomPctEl.textContent        = Math.round(zoomScale * 100) + '%';
+}
+
+function changeZoom(delta) {
+  zoomScale = Math.min(1.0, Math.max(0.2, zoomScale + delta / 100));
+  applyZoom();
+}
+
+window.addEventListener('resize', () => {
+  if (resultWrap.classList.contains('show')) applyZoom();
+});
+
+// ── Resultado en iframe ───────────────────────────────────────
+function submitCode(code) {
+  if (!code) { setStatus('Ingresa un código válido.', 'err'); return; }
+
+  expectedUrl = 'http://net.fh.cl:88/ultron_mobile.asp?busca=' + encodeURIComponent(code);
+  loadCount   = 0;
+
+  document.getElementById('code-label').textContent = 'COD: ' + code;
+  iframe.src = expectedUrl;
+  resultWrap.classList.add('show');
+  setStatus('Cargando código ' + code + '…', 'loading');
+
+  iframe.onload = () => {
+    loadCount++;
+    applyZoom();
+    setStatus('Código ' + code + ' cargado.', 'ok');
+    resultWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+}
+
+// Cerrar si navega a otra URL dentro del iframe
+iframe.addEventListener('load', () => {
+  if (loadCount === 0) return;
+  let changed = false;
+  try {
+    const current = iframe.contentWindow.location.href;
+    changed = (current !== expectedUrl && current !== 'about:blank');
+  } catch(e) {
+    changed = true;
+  }
+  if (changed && resultWrap.classList.contains('show')) closeResult();
+});
+
+function closeResult() {
+  resultWrap.classList.remove('show');
+  iframe.src = '';
+  loadCount  = 0;
+  setStatus('Listo para escanear', 'info');
+  manualInput.value = '';
+}
+
+// ── Status ────────────────────────────────────────────────────
+function setStatus(msg, type = 'info') {
+  statusEl.className = 'status show ' + type;
+  statusEl.innerHTML = type === 'loading'
+    ? `<div class="spinner"></div><span>${msg}</span>`
+    : `<div class="dot"></div><span>${msg}</span>`;
+}
+
+manualInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitCode(manualInput.value.trim());
+});
+</script>
+</body>
+</html>
